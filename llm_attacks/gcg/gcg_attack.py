@@ -42,6 +42,19 @@ def token_gradients(model, input_ids, input_slice, target_slice, loss_slice):
         device=model.device,
         dtype=embed_weights.dtype
     )
+    # this scatter operation replaces select entries in the one_hot matrix, 
+    # which is at this point a matrix of zeros of shape num defense prompt tokens x vocab size.
+    # Specifically, for each successive row, from the start row, to the end row,
+    # it selects the next entry in `input_ids[input_slice].unsqueeze(1)` and places a 1
+    # at the index specified by that token ID. 
+    # E.g. if the 3rd entry of `input_ids[input_slice].unsqueeze(1)`
+    # is token ID 3271, then one_hot[2][3271] is set to 1.
+    # So, after this step, one_hot is a matrix of the one hot encodings
+    # of the tokens in the defense prompt at this point. i.e. 
+    # one_hot = [ – one-hot-token embedding of defense prompt token 1 –
+    #             – one-hot-token embedding of defense prompt token 2 –
+    #             ...
+    #             – one-hot-token embedding of defense prompt token |I| – ]
     one_hot.scatter_(
         1, 
         input_ids[input_slice].unsqueeze(1),
@@ -130,6 +143,16 @@ class GCGPromptManager(PromptManager):
         control_toks = self.def_control_toks.to(grad.device)
         original_control_toks = control_toks.repeat(batch_size, 1)
         # print(original_control_toks.shape)
+        # [0,
+        #  len(control_toks) / batch_size,
+        #  2 * len(control_toks) / batch_size,
+        #  3 * len(control_toks) / batch_size,
+        #  ...
+        #  batch_size * len(control_toks) / batch_size]
+        #
+        # but batch_size |? len(control_toks)
+        # in default configs, batch_size = 512 and
+        # defense prompt is length 20. 512 does not divide 20. ???
         new_token_pos = torch.arange(
             0, 
             len(control_toks), 
