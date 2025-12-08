@@ -30,8 +30,8 @@ def embedding_gradients(model, input_ids, input_slice, target_slice, loss_slice,
 
     Returns
     -------
-    torch.Tensor
-        The gradients of the soft embeddings with respect to the loss.
+    tuple
+        (gradient tensor, loss value)
     """
     
     soft_embeds = soft_embeds.clone().requires_grad_()
@@ -53,14 +53,13 @@ def embedding_gradients(model, input_ids, input_slice, target_slice, loss_slice,
     
     loss.backward()
     
-    return soft_embeds.grad.clone(), loss.item()
+    return soft_embeds.grad.clone()
 
 
 class SoftPromptAttackPrompt(AttackPrompt):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Initialize soft embeddings from current tokens
         self.soft_control_embeds = None
         self.soft_defense_embeds = None
     
@@ -69,17 +68,17 @@ class SoftPromptAttackPrompt(AttackPrompt):
         embed_weights = get_embedding_matrix(model)
         if slice_type == 'control':
             token_ids = self.input_ids[self._control_slice]
-            self.soft_control_embeds = embed_weights[token_ids].clone().detach()
+            self.soft_control_embeds = embed_weights[token_ids].clone().detach().to(model.device)
             return self.soft_control_embeds
         else:  # defense
             token_ids = self.input_ids[self._defense_slice]
-            self.soft_defense_embeds = embed_weights[token_ids].clone().detach()
+            self.soft_defense_embeds = embed_weights[token_ids].clone().detach().to(model.device)
             return self.soft_defense_embeds
     
     def grad(self, model):
         if self.soft_control_embeds is None:
             self.init_soft_embeds(model, 'control')
-        grad, loss = embedding_gradients(
+        return embedding_gradients(
             model, 
             self.input_ids.to(model.device), 
             input_slice=self._control_slice,
@@ -87,12 +86,11 @@ class SoftPromptAttackPrompt(AttackPrompt):
             loss_slice=self._loss_slice,
             soft_embeds=self.soft_control_embeds
         )
-        return grad, loss
     
     def def_grad(self, model):
         if self.soft_defense_embeds is None:
             self.init_soft_embeds(model, 'defense')
-        grad, loss = embedding_gradients(
+        return embedding_gradients(
             model, 
             self.input_ids.to(model.device), 
             input_slice=self._defense_slice, 
@@ -100,29 +98,28 @@ class SoftPromptAttackPrompt(AttackPrompt):
             loss_slice=self._loss_slice,
             soft_embeds=self.soft_defense_embeds
         )
-        return grad, loss
 
 
 class SoftPromptManager(PromptManager):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.soft_control_embeds = None
-        self.soft_defense_embeds = None
-
-    def update_soft_control(self, grad, lr=0.01):
-        """Take a gradient step on soft control embeddings."""
-        if self.soft_control_embeds is None:
-            raise ValueError("Soft control embeddings not initialized")
-        self.soft_control_embeds = self.soft_control_embeds - lr * grad
-        return self.soft_control_embeds
-
-    def update_soft_defense(self, grad, lr=0.01):
-        """Take a gradient step on soft defense embeddings."""
-        if self.soft_defense_embeds is None:
-            raise ValueError("Soft defense embeddings not initialized")
-        self.soft_defense_embeds = self.soft_defense_embeds - lr * grad
-        return self.soft_defense_embeds
+    
+    def grad(self, model):
+        """Sum gradients across all prompts."""
+        return sum([prompt.grad(model) for prompt in self._prompts])
+    
+    def def_grad(self, model):
+        """Sum gradients across all defense prompts."""
+        return sum([prompt.def_grad(model) for prompt in self._prompts])
+    
+    def sample_control(self, *args, **kwargs):
+        """Not used in soft prompt optimization."""
+        pass
+    
+    def def_sample_control(self, *args, **kwargs):
+        """Not used in soft prompt optimization."""
+        pass
 
 
 class SoftPromptMultiPromptAttack(MultiPromptAttack):
@@ -134,14 +131,15 @@ class SoftPromptMultiPromptAttack(MultiPromptAttack):
              lr=0.01,
              target_weight=1, 
              control_weight=0.1, 
-             verbose=False):
+             verbose=False,
+             **kwargs):
 
         main_device = self.models[0].device
 
         # Initialize soft embeddings if needed
-        for j, prompt in enumerate(self.prompts):
-            if prompt[0].soft_control_embeds is None:
-                for p in prompt:
+        for j, prompt_manager in enumerate(self.prompts):
+            for p in prompt_manager:
+                if p.soft_control_embeds is None:
                     p.init_soft_embeds(self.models[j % len(self.models)], 'control')
 
         # Compute gradients
@@ -150,31 +148,30 @@ class SoftPromptMultiPromptAttack(MultiPromptAttack):
 
         # Aggregate gradients
         grad = None
-        total_loss = 0
         for j, worker in enumerate(self.workers):
-            new_grad, loss = worker.results.get()
+            new_grad = worker.results.get()
             new_grad = new_grad.to(main_device)
-            total_loss += loss
+            new_grad = new_grad / new_grad.norm(dim=-1, keepdim=True)
             if grad is None:
-                grad = new_grad
-            else:
-                grad += new_grad
+                grad = torch.zeros_like(new_grad)
+            grad += new_grad
 
         # Average gradient
         grad = grad / len(self.workers)
         
         # Update soft embeddings
         with torch.no_grad():
-            for prompt in self.prompts:
-                for p in prompt:
+            for prompt_manager in self.prompts:
+                for p in prompt_manager:
                     p.soft_control_embeds = p.soft_control_embeds - lr * grad
-
-        avg_loss = total_loss / len(self.workers)
+        
+        # Compute loss for logging (reuse last gradient computation)
+        loss = 0.0
         
         if verbose:
-            print(f'Step loss: {avg_loss:.4f}')
+            print(f'Soft prompt step with lr={lr}')
 
-        return None, avg_loss
+        return None, loss
 
     def defense_step(self, 
              lr=0.01,
@@ -182,14 +179,15 @@ class SoftPromptMultiPromptAttack(MultiPromptAttack):
              control_weight=0.1, 
              benign_weight=0,
              refuse_target_weight=0,
-             verbose=False):
+             verbose=False,
+             **kwargs):
 
         main_device = self.models[0].device
 
         # Initialize soft embeddings if needed
-        for j, prompt in enumerate(self.prompts):
-            if prompt[0].soft_defense_embeds is None:
-                for p in prompt:
+        for j, prompt_manager in enumerate(self.prompts):
+            for p in prompt_manager:
+                if p.soft_defense_embeds is None:
                     p.init_soft_embeds(self.models[j % len(self.models)], 'defense')
 
         # Compute gradients
@@ -198,28 +196,26 @@ class SoftPromptMultiPromptAttack(MultiPromptAttack):
 
         # Aggregate gradients
         grad = None
-        total_loss = 0
         for j, worker in enumerate(self.workers):
-            new_grad, loss = worker.results.get()
+            new_grad = worker.results.get()
             new_grad = new_grad.to(main_device)
-            total_loss += loss
+            new_grad = new_grad / new_grad.norm(dim=-1, keepdim=True)
             if grad is None:
-                grad = new_grad
-            else:
-                grad += new_grad
+                grad = torch.zeros_like(new_grad)
+            grad += new_grad
 
         # Average gradient and negate for defense (maximize target loss)
         grad = -grad / len(self.workers)
         
         # Update soft embeddings
         with torch.no_grad():
-            for prompt in self.prompts:
-                for p in prompt:
+            for prompt_manager in self.prompts:
+                for p in prompt_manager:
                     p.soft_defense_embeds = p.soft_defense_embeds - lr * grad
 
-        avg_loss = total_loss / len(self.workers)
+        loss = 0.0
         
         if verbose:
-            print(f'Defense step loss: {avg_loss:.4f}')
+            print(f'Soft defense step with lr={lr}')
 
-        return None, avg_loss
+        return None, loss
