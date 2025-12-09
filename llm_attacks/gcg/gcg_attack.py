@@ -193,7 +193,7 @@ class GCGMultiPromptAttack(MultiPromptAttack):
         main_device = self.models[0].device
         control_cands = []
 
-        pworker in enumerate(self.workers):
+        for j, worker in enumerate(self.workers):
             worker(self.prompts[j], "grad", worker.model)
 
         # Aggregate gradients
