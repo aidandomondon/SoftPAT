@@ -105,6 +105,9 @@ class SoftPromptPromptManager(PromptManager):
                        topk=None,   # don't need topk since we step directly in the direction of gradient
                        temp=1, 
                        allow_non_ascii=True):
+        """
+        Gets the next soft prompt control
+        """
 
         if not allow_non_ascii:
             grad[:, self._nonascii_toks.to(grad.device)] = np.infty
@@ -190,68 +193,29 @@ class SoftPromptMultiPromptAttack(MultiPromptAttack):
         opt_only = False
 
         main_device = self.models[0].device
-        control_cands = []
 
-        for j, worker in enumerate(self.workers):
-            worker(self.prompts[j], "grad", worker.model)
-
-        # Aggregate gradients
-        grad = None
-        for j, worker in enumerate(self.workers):
-            new_grad = worker.results.get().to(main_device) 
-            new_grad = new_grad / new_grad.norm(dim=-1, keepdim=True)
-            if grad is None:
-                grad = torch.zeros_like(new_grad)
-            if grad.shape != new_grad.shape:
-                with torch.no_grad():
-                    # here, self.prompts' elements are of type SoftPromptPromptManager
-                    control_cand = self.prompts[j-1].sample_control(grad, batch_size, topk, temp, allow_non_ascii)
-                    control_cands.append(self.get_filtered_cands(j-1, control_cand, filter_cand=filter_cand, curr_control=self.control_str))
-                grad = new_grad
-            else:
-                grad += new_grad
-
-        with torch.no_grad():
-            control_cand = self.prompts[j].sample_control(grad, batch_size, topk, temp, allow_non_ascii)
-            control_cands.append(self.get_filtered_cands(j, control_cand, filter_cand=filter_cand, curr_control=self.control_str))
-        del grad, control_cand ; gc.collect()
+        # Get gradient
+        if len(self.workers) > 1:
+            raise Exception('Support for multiple workers not yet implemented')
+        worker = self.workers[0]
+        worker(self.prompts[0], "grad", worker.model)
+        grad = worker.results.get().to(main_device) 
+        grad = grad / grad.norm(dim=-1, keepdim=True)
+        next_control = self.prompts[0].sample_control(grad, batch_size, topk, temp, allow_non_ascii)
+        del grad; gc.collect()
         
         # Search
-        loss = torch.zeros(len(control_cands) * batch_size).to(main_device)
+        loss = 0
         with torch.no_grad():
-            for j, cand in enumerate(control_cands):
-                # Looping through the prompts at this level is less elegant, but
-                # we can manage VRAM better this way
-                progress = tqdm(range(len(self.prompts[0])), total=len(self.prompts[0])) if verbose else enumerate(self.prompts[0])
-                for i in progress:
-                    for k, worker in enumerate(self.workers):
-                        worker(self.prompts[k][i], "logits", worker.model, cand, return_ids=True)
-                    logits, ids = zip(*[worker.results.get() for worker in self.workers])
-                    loss[j*batch_size:(j+1)*batch_size] += sum([
-                        self.prompts[k][i].target_loss(logit, id).mean(dim=-1).to(main_device) 
-                        for k, (logit, id) in enumerate(zip(logits, ids))
-                    ])
-                    if control_weight != 0:
-                        loss[j*batch_size:(j+1)*batch_size] += sum([
-                            control_weight*self.prompts[k][i].control_loss(logit, id).mean(dim=-1).to(main_device)
-                            for k, (logit, id) in enumerate(zip(logits, ids))
-                        ])
-                    del logits, ids ; gc.collect()
-                    
-                    if verbose:
-                        progress.set_description(f"loss={loss[j*batch_size:(j+1)*batch_size].min().item()/(i+1):.4f}")
+            worker = self.workers[0]
+            worker(self.prompts[0], "logits", worker.model, next_control, return_ids=True)
+            logit, id = worker.results.get()
+            loss += self.prompts[0].target_loss(logit, id).mean(dim=-1).to(main_device)
+            if control_weight != 0:
+                loss += control_weight * self.prompts[0].control_loss(logit, id).mean(dim=-1).to(main_device)
+            del logit, id ; gc.collect()
 
-            min_idx = loss.argmin()
-            model_idx = min_idx // batch_size
-            batch_idx = min_idx % batch_size
-            next_control, cand_loss = control_cands[model_idx][batch_idx], loss[min_idx]
-        
-        del control_cands, loss ; gc.collect()
-
-        print('Current length:', len(self.workers[0].tokenizer(next_control).input_ids[1:]))
-        print(next_control)
-
-        return next_control, cand_loss.item() / len(self.prompts[0]) / len(self.workers)
+        return next_control, loss
     
 
     def defense_step(self, 
