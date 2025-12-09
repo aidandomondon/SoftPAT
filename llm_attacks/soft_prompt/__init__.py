@@ -1,6 +1,6 @@
-from .soft_prompt_attack import (
-    SoftPromptAttackPrompt,
-    SoftPromptManager,
-    SoftPromptMultiPromptAttack,
-    embedding_gradients
-)
+from .soft_prompt_attack import SoftPromptAttackPrompt as AttackPrompt
+from .soft_prompt_attack import SoftPromptPromptManager as PromptManager
+from .soft_prompt_attack import SoftPromptMultiPromptAttack as MultiPromptAttack
+
+from llm_attacks import ProgressiveMultiPromptAttack
+from llm_attacks import IndividualPromptAttack

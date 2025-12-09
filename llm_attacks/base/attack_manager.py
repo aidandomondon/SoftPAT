@@ -655,6 +655,7 @@ class PromptManager(object):
         return [prompt.test_loss(model) for prompt in self._prompts]
     
     def grad(self, model):
+        # self._prompts is an AttackPrompt
         return sum([prompt.grad(model) for prompt in self._prompts])
     
     def def_grad(self, model):
@@ -1328,8 +1329,8 @@ class ProgressiveMultiPromptAttack(object):
             
             log['params']['n_steps'] = n_steps
             log['params']['test_steps'] = test_steps
-            log['params']['batch_size'] = batch_size
-            log['params']['topk'] = topk
+            # log['params']['batch_size'] = batch_size  # don't need batch_size since we step directly in the direction of gradient (so no sampling)
+            # log['params']['topk'] = topk  # don't need topk since we step directly in the direction of gradient
             log['params']['temp'] = temp
             log['params']['allow_non_ascii'] = allow_non_ascii
             log['params']['target_weight'] = target_weight
@@ -1338,7 +1339,7 @@ class ProgressiveMultiPromptAttack(object):
             log['params']['benign_weight'] = benign_weight
             log['params']['attack_freq'] = attack_freq
             log['params']['defense_freq'] = defense_freq
-            log['params']['anneal'] = anneal
+            # log['params']['anneal'] = anneal  # don't need annealing since our method isn't discrete
             log['params']['incr_control'] = incr_control
             log['params']['stop_on_success'] = stop_on_success
             
@@ -1374,16 +1375,16 @@ class ProgressiveMultiPromptAttack(object):
                 stop_inner_on_success = False
             control, loss, def_control, def_loss, inner_steps = attack.run(
                 n_steps=n_steps - step,
-                batch_size=batch_size,
-                topk=topk,
+                # batch_size=batch_size,    # don't need batch_size since we step directly in the direction of gradient (so no sampling)
+                # topk=topk,    # don't need topk since we step directly in the direction of gradient
                 temp=temp,
                 allow_non_ascii=allow_non_ascii,
                 target_weight=target_weight,
                 control_weight=control_weight,
                 benign_weight=benign_weight,
                 refuse_target_weight=refuse_target_weight,
-                anneal=anneal,
-                anneal_from=step,
+                # anneal=anneal,    # don't need annealing since our method isn't discrete
+                # anneal_from=step, # don't need annealing since our method isn't discrete
                 prev_loss=loss,
                 stop_on_success=stop_inner_on_success,
                 test_steps=test_steps,

@@ -23,9 +23,9 @@ else
 fi
 
 #TODO: Decrease n_steps and test_steps
-CUDA_VISIBLE_DEVICES=${device} python -u ../main.py \
+CUDA_VISIBLE_DEVICES=${device} python -u ../main_soft.py \
     --config="../configs/transfer_${model}_multi.py" \
-    --config.attack=gcg \
+    --config.attack=soft_prompt \
     --config.train_data="../../data/advbench/harmful_behaviors.csv" \
     --config.result_prefix=${log_name} \
     --config.progressive_goals=False \
