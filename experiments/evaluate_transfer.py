@@ -73,7 +73,7 @@ def main(_):
         }
     elif 'vicuna' in params.model_paths[0]:
         _MODELS = {
-            "Vicuna": ["/path/to/model/vicuna-7b-v1.3", {"use_fast": False}, "vicuna", 64]
+            "Vicuna": ["lmsys/vicuna-7b-v1.3", {"use_fast": False}, "vicuna", 64]
         }
     elif 'Llama' in params.model_paths[0]:
         _MODELS = {
@@ -95,7 +95,7 @@ def main(_):
     targets = [process_fn(t) if np.random.random() < 0.5 else process_fn2(t) for t in targets]
     
     # read defense control
-    with open(params.logfile, 'r') as f:
+    with open(params.logfile, 'r') as f: #TODO: specify logfile somewhere! 
         log = json.load(f)
     try:
         raw_def_controls = log['def_controls']
@@ -244,7 +244,7 @@ def main(_):
 
     # change the name
     idx = params.logfile.rfind(".json")
-    with open(params.logfile, 'w') as f:
+    with open(params.logfile, 'w') as f:    #TODO: specify logfile somewhere! 
         json.dump(results, f)
 
 

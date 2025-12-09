@@ -22,6 +22,7 @@ else
     echo "Folder '../results/1-28' already exists."
 fi
 
+#TODO: Decrease n_steps and test_steps
 CUDA_VISIBLE_DEVICES=${device} python -u ../main.py \
     --config="../configs/transfer_${model}_multi.py" \
     --config.attack=gcg \
