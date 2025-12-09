@@ -13,13 +13,13 @@ def get_config():
     config.progressive_goals = False
     config.stop_on_success = False
     config.tokenizer_paths = [
-        "/path/to/model/vicuna-7b-v1.3",
+        "drive/MyDrive/LLMs/models--lmsys--vicuna-7b-v1.3/snapshots/236eeeab96f0dc2e463f2bebb7bb49809279c6d6",
         # "path/to/model/vicuna-13b-v1.3",
     ]
     # config.tokenizer_kwargs = [{"use_fast": False}, {"use_fast": False}]
     config.tokenizer_kwargs = [{"use_fast": False}]
     config.model_paths = [
-        "/path/to/model/vicuna-7b-v1.3",
+        "drive/MyDrive/LLMs/models--lmsys--vicuna-7b-v1.3/snapshots/236eeeab96f0dc2e463f2bebb7bb49809279c6d6",
         # "/path/to/model/vicuna-7b-v1.3",
     ]
     config.model_kwargs = [
