@@ -26,3 +26,8 @@ We are trying to create an approach using the attached paper as a reference. Thi
 
 Make a script for running this experimental approach.
 ```
+
+Results:
+
+- 15 iters, 100 of each prompt, ASR with= 99%, ASR w/o = 61%
+- 5 iters, 25 of each prompt, ASR with= 98%, ASR w/o = 60%
