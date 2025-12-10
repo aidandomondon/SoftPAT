@@ -13,7 +13,7 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 import torch.nn.functional as F
-from fastchat.model import get_conversation_template
+from fastchat.model import get_conversation_template #TODO: look into conversation templates
 from transformers import (AutoModelForCausalLM, AutoTokenizer, GPT2LMHeadModel,
                           GPTJForCausalLM, GPTNeoXForCausalLM,
                           LlamaForCausalLM)

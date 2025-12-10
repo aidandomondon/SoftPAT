@@ -176,6 +176,28 @@ class SoftPromptMultiPromptAttack(MultiPromptAttack):
 
         super().__init__(*args, **kwargs)
 
+        _model = self.workers[0].model
+        embeds = get_embeddings(_model, input_ids.unsqueeze(0)).detach()
+        input_embeds = embeds[:, input_slice.start:input_slice.stop, :]
+        input_embeds.requires_grad_(True)
+
+
+        self.prompts = [
+            self.managers['PM'](  # PromptManager
+                self.goals,
+                self.targets,
+                self.refuse_targets,
+                self.worker.tokenizer,
+                self.worker.conv_template,
+                self.control_init,
+                self.def_control_init,
+                self.test_prefixes,
+                self.managers,
+                self.benign_file, 
+            )
+            for worker in self.workers
+        ]
+        
     def step(self, 
              batch_size=1024,   # don't need batch_size since we step directly in the direction of gradient (so no sampling) 
              topk=None, # don't need topk since we step directly in the direction of gradient
