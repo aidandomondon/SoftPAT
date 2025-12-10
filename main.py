@@ -31,8 +31,8 @@ DEFAULT_CONFIG = {
     "attack_prompt_length": 20,
     "n_iterations": 5,
     "alpha": 0.5,
-    "lr_defense": 0.000001,  # Lowered for stability
-    "lr_attack": 0.000001,   # Lowered for stability
+    "lr_defense": 0.00000001,  # Lowered for stability
+    "lr_attack": 0.00000001,   # Lowered for stability
     "batch_size": 4,
     "attack_freq": 1,
     "defense_freq": 1,
@@ -149,18 +149,18 @@ def main():
         'asr_without_attack': []
     }
     print("\nInitial evaluation...")
-    initial_asr, initial_results = evaluate_asr(
-        model=model,
-        soft_prompt_manager=soft_prompt_manager,
-        tokenizer=tokenizer,
-        test_goals=test_harmful_goals,
-        test_targets=test_harmful_targets,
-        max_new_tokens=config['max_new_tokens'],
-        include_attack=True
-    )
+    # initial_asr, initial_results = evaluate_asr(
+    #     model=model,
+    #     soft_prompt_manager=soft_prompt_manager,
+    #     tokenizer=tokenizer,
+    #     test_goals=test_harmful_goals,
+    #     test_targets=test_harmful_targets,
+    #     max_new_tokens=config['max_new_tokens'],
+    #     include_attack=True
+    # )
 
-    print(f"Initial results: {initial_results}")
-    print(f"  Initial ASR (with attack): {initial_asr:.2%}")
+    # print(f"Initial results: {initial_results}")
+    # print(f"  Initial ASR (with attack): {initial_asr:.2%}")
     print(f"\nStarting training for {config['n_iterations']} iterations...")
     for iteration in tqdm(range(config['n_iterations']), desc="Training"):
         if iteration % config['defense_freq'] == 0:
@@ -263,7 +263,7 @@ def main():
     print(f"Final ASR (without attack prompt): {final_asr_without_attack:.2%}")
     final_results = {
         'config': config,
-        'initial_asr': initial_asr,
+        # 'initial_asr': initial_asr,
         'final_asr_with_attack': final_asr_with_attack,
         'final_asr_without_attack': final_asr_without_attack,
         'training_log': training_log,
