@@ -10,6 +10,7 @@ import random
 from datetime import datetime
 import numpy as np
 import torch
+from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from fastchat.model import get_conversation_template
 from softpat.data import load_harmful_data, load_benign_data
@@ -28,10 +29,10 @@ DEFAULT_CONFIG = {
     "data_offset": 0,
     "defense_prompt_length": 20,
     "attack_prompt_length": 20,
-    "n_iterations": 100,
+    "n_iterations": 5,
     "alpha": 0.5,
-    "lr_defense": 0.001,  # Lowered for stability
-    "lr_attack": 0.001,   # Lowered for stability
+    "lr_defense": 0.01,  # Lowered for stability
+    "lr_attack": 0.01,   # Lowered for stability
     "batch_size": 4,
     "attack_freq": 1,
     "defense_freq": 1,
@@ -103,6 +104,12 @@ def main():
     train_benign_queries, train_benign_answers = load_benign_data(
         config['benign_data_path'], config['n_train_benign'], config['data_offset']
     )
+
+    print(f" harmful data: {train_harmful_goals[0]}")
+    print(f" harmful target: {train_harmful_targets[0]}")
+    print(f" benign query: {train_benign_queries[0]}")
+    print(f" benign answer: {train_benign_answers[0]}")
+
     print(f"  Harmful train: {len(train_harmful_goals)}")
     print(f"  Harmful test: {len(test_harmful_goals)}")
     print(f"  Benign train: {len(train_benign_queries)}")
@@ -137,9 +144,10 @@ def main():
         max_new_tokens=config['max_new_tokens'],
         include_attack=True
     )
+
+    print(f"Initial results: {initial_results}")
     print(f"  Initial ASR (with attack): {initial_asr:.2%}")
     print(f"\nStarting training for {config['n_iterations']} iterations...")
-    from tqdm import tqdm
     for iteration in tqdm(range(config['n_iterations']), desc="Training"):
         if iteration % config['defense_freq'] == 0:
             defense_losses = defense_step(
@@ -171,6 +179,10 @@ def main():
         training_log['iterations'].append(iteration)
         training_log['defense_losses'].append(defense_losses)
         training_log['attack_losses'].append(attack_losses)
+
+        print(defense_losses)
+        print(attack_losses)
+        
         if (iteration + 1) % config['eval_freq'] == 0:
             print(f"\n--- Iteration {iteration + 1} ---")
             if defense_losses:

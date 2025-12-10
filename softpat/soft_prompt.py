@@ -51,6 +51,9 @@ class SoftPromptManager:
         embed_layer = self._get_embedding_layer()
         embed_weight = embed_layer.weight.data
         random_indices = torch.randint(0, embed_weight.shape[0], (length,))
+
+        # initialize with small random selection of subset of embeddings to 
+        # match embedding space better
         init_embeds = embed_weight[random_indices].clone()
         init_embeds += torch.randn_like(init_embeds) * 0.01
         soft_prompt = nn.Parameter(init_embeds.to(self.device))
