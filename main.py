@@ -30,8 +30,8 @@ DEFAULT_CONFIG = {
     "attack_prompt_length": 20,
     "n_iterations": 100,
     "alpha": 0.5,
-    "lr_defense": 0.01,
-    "lr_attack": 0.01,
+    "lr_defense": 0.001,  # Lowered for stability
+    "lr_attack": 0.001,   # Lowered for stability
     "batch_size": 4,
     "attack_freq": 1,
     "defense_freq": 1,

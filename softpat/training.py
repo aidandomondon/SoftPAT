@@ -33,11 +33,24 @@ def compute_loss(
     target_len = target_ids.shape[1]
     shift_logits = logits[:, input_len-1:input_len+target_len-1, :]
     shift_labels = target_ids
+    # Defensive checks for NaN/Inf
+    if torch.isnan(shift_logits).any() or torch.isinf(shift_logits).any():
+        print("[DEBUG] NaN or Inf detected in shift_logits")
+        print("shift_logits:", shift_logits)
+    if torch.isnan(shift_labels.float()).any() or torch.isinf(shift_labels.float()).any():
+        print("[DEBUG] NaN or Inf detected in shift_labels")
+        print("shift_labels:", shift_labels)
     loss_fn = nn.CrossEntropyLoss()
     loss = loss_fn(
         shift_logits.reshape(-1, shift_logits.shape[-1]),
         shift_labels.reshape(-1)
     )
+    if torch.isnan(loss) or torch.isinf(loss):
+        print("[DEBUG] NaN or Inf detected in loss value!")
+        print("input_embeds shape:", input_embeds.shape)
+        print("target_embeds shape:", target_embeds.shape)
+        print("shift_logits stats: min", shift_logits.min().item(), "max", shift_logits.max().item())
+        print("shift_labels:", shift_labels)
     return loss
 
 def defense_loss(
