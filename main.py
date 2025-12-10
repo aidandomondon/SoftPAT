@@ -29,7 +29,7 @@ DEFAULT_CONFIG = {
     "data_offset": 0,
     "defense_prompt_length": 20,
     "attack_prompt_length": 20,
-    "n_iterations": 5,
+    "n_iterations": 2,
     "alpha": 0.5,
     "lr_defense": 1e-4,  # Reasonable LR with float32 soft prompts
     "lr_attack": 1e-4,   # Reasonable LR with float32 soft prompts
