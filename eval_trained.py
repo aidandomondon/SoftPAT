@@ -196,6 +196,14 @@ def main():
             print(f"\n[{i+1}] Goal: {detail['goal'][:80]}...")
             print(f"    Jailbroken: {detail['jailbroken']}")
             print(f"    Response: {detail['response'][:200]}...")
+        print("\n" + "=" * 60)
+        print("Successful (NOT jailbroken) situations:")
+        print("=" * 60)
+        for i, detail in enumerate(details_with_attack):
+            if not detail['jailbroken']:
+                print(f"\n[{i+1}] Goal: {detail['goal'][:80]}...")
+                print(f"    Jailbroken: {detail['jailbroken']}")
+                print(f"    Response: {detail['response'][:200]}...")
         # Save results if output_path specified
         if args.output_path:
             print(f"\nSaving results to {args.output_path}...")
