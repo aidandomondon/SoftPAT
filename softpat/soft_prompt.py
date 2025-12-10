@@ -55,9 +55,40 @@ class SoftPromptManager:
         # initialize with small random selection of subset of embeddings to 
         # match embedding space better
         init_embeds = embed_weight[random_indices].clone()
-        init_embeds += torch.randn_like(init_embeds) * 0.01
-        soft_prompt = nn.Parameter(init_embeds.to(self.device))
+        # Use smaller noise to stay closer to valid embedding distribution
+        init_embeds += torch.randn_like(init_embeds) * 0.001
+        # IMPORTANT: Keep soft prompts in float32 for numerical stability during optimization
+        # even if the model is in float16
+        soft_prompt = nn.Parameter(init_embeds.float().to(self.device))
         return soft_prompt
+    
+    def clamp_prompts(self, max_norm: float = 100.0):
+        """Clamp soft prompts to prevent embedding drift causing NaN."""
+        with torch.no_grad():
+            # Get reference embedding statistics
+            embed_layer = self._get_embedding_layer()
+            embed_weight = embed_layer.weight.data.float()  # Convert to float32 for comparison
+            
+            # Clamp defense prompt
+            defense_norm = self.defense_prompt.norm(dim=-1, keepdim=True)
+            if (defense_norm > max_norm).any():
+                self.defense_prompt.data = self.defense_prompt.data * (max_norm / defense_norm.clamp(min=1e-8))
+            
+            # Clamp attack prompt  
+            attack_norm = self.attack_prompt.norm(dim=-1, keepdim=True)
+            if (attack_norm > max_norm).any():
+                self.attack_prompt.data = self.attack_prompt.data * (max_norm / attack_norm.clamp(min=1e-8))
+            
+            # Replace any NaN/Inf with random valid embeddings (keep float32)
+            if torch.isnan(self.defense_prompt).any() or torch.isinf(self.defense_prompt).any():
+                print("[WARNING] NaN/Inf in defense_prompt, reinitializing...")
+                random_indices = torch.randint(0, embed_weight.shape[0], (self.defense_length,))
+                self.defense_prompt.data = embed_weight[random_indices].clone().float().to(self.device)
+            
+            if torch.isnan(self.attack_prompt).any() or torch.isinf(self.attack_prompt).any():
+                print("[WARNING] NaN/Inf in attack_prompt, reinitializing...")
+                random_indices = torch.randint(0, embed_weight.shape[0], (self.attack_length,))
+                self.attack_prompt.data = embed_weight[random_indices].clone().float().to(self.device)
 
     def setup_optimizers(self, lr_defense: float, lr_attack: float, scheduler_type: str = "linear", num_warmup_steps: int = 0, num_training_steps: int = 100):
         self.defense_optimizer = AdamW([self.defense_prompt], lr=lr_defense)
@@ -91,13 +122,18 @@ class SoftPromptManager:
         input_ids = tokens.input_ids.to(self.device)
         embed_layer = self._get_embedding_layer()
         text_embeds = embed_layer(input_ids)
+        
+        # Get the target dtype from the model's embeddings
+        target_dtype = text_embeds.dtype
+        
         components = []
         if include_defense:
-            defense_embeds = self.defense_prompt.unsqueeze(0)
+            # Cast soft prompt to model dtype for forward pass, but keep fp32 for gradients
+            defense_embeds = self.defense_prompt.unsqueeze(0).to(target_dtype)
             components.append(defense_embeds)
         components.append(text_embeds)
         if include_attack:
-            attack_embeds = self.attack_prompt.unsqueeze(0)
+            attack_embeds = self.attack_prompt.unsqueeze(0).to(target_dtype)
             components.append(attack_embeds)
         combined_embeds = torch.cat(components, dim=1)
         return combined_embeds

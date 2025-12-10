@@ -26,35 +26,55 @@ def compute_loss(
     target_ids = target_tokens.input_ids.to(input_embeds.device)
     embed_layer = soft_prompt_manager._get_embedding_layer()
     target_embeds = embed_layer(target_ids)
+    
+    # Check input embeddings for NaN/Inf BEFORE forward pass
+    if torch.isnan(input_embeds).any() or torch.isinf(input_embeds).any():
+        print("[DEBUG] NaN or Inf detected in input_embeds BEFORE forward pass!")
+        print(f"  input_embeds stats: min={input_embeds.min().item():.4f}, max={input_embeds.max().item():.4f}, mean={input_embeds.mean().item():.4f}")
+        # Check defense prompt specifically
+        defense_prompt = soft_prompt_manager.defense_prompt
+        print(f"  defense_prompt stats: min={defense_prompt.min().item():.4f}, max={defense_prompt.max().item():.4f}, mean={defense_prompt.mean().item():.4f}")
+        if torch.isnan(defense_prompt).any():
+            print("  [CRITICAL] NaN in defense_prompt!")
+        if torch.isinf(defense_prompt).any():
+            print("  [CRITICAL] Inf in defense_prompt!")
+    
     full_embeds = torch.cat([input_embeds, target_embeds], dim=1)
-    outputs = model(inputs_embeds=full_embeds)
+    
+    # Use autocast for numerical stability if on CUDA
+    if full_embeds.device.type == 'cuda':
+        with torch.amp.autocast(device_type='cuda', dtype=torch.float16, enabled=False):
+            outputs = model(inputs_embeds=full_embeds)
+    else:
+        outputs = model(inputs_embeds=full_embeds)
+    
     logits = outputs.logits
-    print(f"logits shape: {logits.shape}")
-    print(f"input_embeds shape: {input_embeds.shape}")
-    print(f"target_embeds shape: {target_embeds.shape}")
-    print(f"full_embeds: {full_embeds}")
     input_len = input_embeds.shape[1]
     target_len = target_ids.shape[1]
     shift_logits = logits[:, input_len-1:input_len+target_len-1, :]
     shift_labels = target_ids
+    
     # Defensive checks for NaN/Inf
     if torch.isnan(shift_logits).any() or torch.isinf(shift_logits).any():
         print("[DEBUG] NaN or Inf detected in shift_logits")
-        print("shift_logits:", shift_logits)
-    if torch.isnan(shift_labels.float()).any() or torch.isinf(shift_labels.float()).any():
-        print("[DEBUG] NaN or Inf detected in shift_labels")
-        print("shift_labels:", shift_labels)
+        print(f"  logits shape: {logits.shape}")
+        print(f"  input_embeds shape: {input_embeds.shape}, stats: min={input_embeds.min().item():.4f}, max={input_embeds.max().item():.4f}")
+        print(f"  full_embeds shape: {full_embeds.shape}, stats: min={full_embeds.min().item():.4f}, max={full_embeds.max().item():.4f}")
+        # Return a dummy loss to avoid crashing
+        return torch.tensor(0.0, device=input_embeds.device, requires_grad=True)
+    
     loss_fn = nn.CrossEntropyLoss()
     loss = loss_fn(
         shift_logits.reshape(-1, shift_logits.shape[-1]),
         shift_labels.reshape(-1)
     )
+    
     if torch.isnan(loss) or torch.isinf(loss):
         print("[DEBUG] NaN or Inf detected in loss value!")
-        print("input_embeds shape:", input_embeds.shape)
-        print("target_embeds shape:", target_embeds.shape)
-        print("shift_logits stats: min", shift_logits.min().item(), "max", shift_logits.max().item())
-        print("shift_labels:", shift_labels)
+        print(f"  shift_logits stats: min={shift_logits.min().item():.4f}, max={shift_logits.max().item():.4f}")
+        print(f"  shift_labels: {shift_labels}")
+        return torch.tensor(0.0, device=input_embeds.device, requires_grad=True)
+    
     return loss
 
 def defense_loss(
@@ -109,7 +129,13 @@ def defense_loss(
         loss_type="benign"
     )
     losses['benign'] = loss_benign.item()
-    total_loss = (1 - alpha) * (-loss_harmful) + alpha * loss_benign
+    
+    # Use log-space for harmful loss maximization (more stable than raw negation)
+    # -log(loss) increases as loss decreases, providing bounded gradients
+    # This avoids the unbounded negative values from simple -loss_harmful
+    harmful_term = -torch.log(loss_harmful + 1e-6)
+    total_loss = (1 - alpha) * harmful_term + alpha * loss_benign
+    
     losses['total'] = total_loss.item()
     return total_loss, losses
 
@@ -184,6 +210,8 @@ def defense_step(
     total_loss.backward()
     torch.nn.utils.clip_grad_norm_([soft_prompt_manager.defense_prompt], max_norm=1.0)
     soft_prompt_manager.defense_optimizer.step()
+    # Clamp prompts to prevent embedding drift
+    soft_prompt_manager.clamp_prompts()
     # Step the defense scheduler if present
     if hasattr(soft_prompt_manager, 'step_defense_scheduler'):
         soft_prompt_manager.step_defense_scheduler()
@@ -221,6 +249,8 @@ def attack_step(
     total_loss.backward()
     torch.nn.utils.clip_grad_norm_([soft_prompt_manager.attack_prompt], max_norm=1.0)
     soft_prompt_manager.attack_optimizer.step()
+    # Clamp prompts to prevent embedding drift
+    soft_prompt_manager.clamp_prompts()
     # Step the attack scheduler if present
     if hasattr(soft_prompt_manager, 'step_attack_scheduler'):
         soft_prompt_manager.step_attack_scheduler()

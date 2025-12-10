@@ -31,8 +31,8 @@ DEFAULT_CONFIG = {
     "attack_prompt_length": 20,
     "n_iterations": 5,
     "alpha": 0.5,
-    "lr_defense": 0.00000001,  # Lowered for stability
-    "lr_attack": 0.00000001,   # Lowered for stability
+    "lr_defense": 1e-4,  # Reasonable LR with float32 soft prompts
+    "lr_attack": 1e-4,   # Reasonable LR with float32 soft prompts
     "batch_size": 4,
     "attack_freq": 1,
     "defense_freq": 1,
@@ -40,10 +40,9 @@ DEFAULT_CONFIG = {
     "max_new_tokens": 64,
     "output_dir": "results/soft_pat",
     "seed": 42,
-    "seed": 42,
     # Scheduler config
     "scheduler_type": "linear",
-    "num_warmup_steps": 3,
+    "num_warmup_steps": 0,
     "num_training_steps": 5,
 }
 
