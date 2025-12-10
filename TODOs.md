@@ -41,12 +41,15 @@ Actual TODOs:
 - can embed in step and defense step of SoftpromptMultiPromptAttack
 
 ### System Generation Prompt
+
 ```
+We are trying to create an approach using the attached paper as a reference. This replaces the need for discretized attack and defense hard prompts with soft prompts in the embedding space. Create a system that is implements the following approach below:
+
 - Read in harmful data from harmful data directory and read in benign data from benign data directory
 - Instantiate LLM
 - **GOAL** In alternating steps, optimize two soft prompts– defensive and offensive –meant to respectively discourage and encourage the LLM answering harmful goals.
   - Training details:
-    - Defensive: 
+    - Defensive:
       - Goal: encourage LLM to refuse responding to harmful goals from harmful behaviors dataset while retaining usefulness in responding to benign goals from benign dataset.
       - Training details:
         - Loss function: (1 - alpha) * Loss_{harmful} + (alpha) * Loss_{benign} where alpha is a balancing parameter.
@@ -62,6 +65,14 @@ Actual TODOs:
   - Instantiate the soft prompts randomly
   - Run the optimization steps for a variable number of iterations T.
   - Parameterize the number of data samples used for training and test so they are easily customizable.
+
+Make a script for running this experimental approach.
 ```
 
-      <!-- 2. Calculating its usefulness for benign goals by running it against benchmarks MT-bench and MMLU -->
+Results:
+
+- 5 iters, 25 of each prompt, ASR with= 98%, ASR w/o = 60%
+- 10 iters, 25 of each prompt, ASR with= 96%, ASR w/o = 56%
+- 15 iters, 25 of each prompt, ASR with= 92%, ASR w/o = 56%
+- 20 iters, 25 of each prompt, ASR with= 92%, ASR w/o = 54%
+- 50 iters, 25 of each prompt, ASR with= 91%, ASR w/o = 51%

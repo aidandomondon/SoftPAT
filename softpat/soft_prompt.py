@@ -1,0 +1,160 @@
+"""
+soft_prompt.py
+SoftPromptManager class for Soft Prompt Adversarial Training (SoftPAT)
+"""
+import torch
+import torch.nn as nn
+from torch.optim import AdamW
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+class SoftPromptManager:
+    """
+    Manages soft prompts in embedding space for adversarial training.
+    The soft prompts are learned continuous vectors that replace discrete tokens.
+    """
+    def __init__(
+        self,
+        model: AutoModelForCausalLM,
+        tokenizer: AutoTokenizer,
+        defense_length: int,
+        attack_length: int,
+        device: str = "cuda:0"
+    ):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = device
+        self.defense_length = defense_length
+        self.attack_length = attack_length
+        self.embed_dim = self._get_embed_dim()
+        self.defense_prompt = self._init_soft_prompt(defense_length)
+        self.attack_prompt = self._init_soft_prompt(attack_length)
+        self.defense_optimizer = None
+        self.attack_optimizer = None
+
+    def _get_embed_dim(self) -> int:
+        if hasattr(self.model, 'model'):
+            return self.model.model.embed_tokens.weight.shape[1]
+        elif hasattr(self.model, 'transformer'):
+            return self.model.transformer.wte.weight.shape[1]
+        else:
+            raise ValueError(f"Unknown model architecture: {type(self.model)}")
+
+    def _get_embedding_layer(self):
+        if hasattr(self.model, 'model'):
+            return self.model.model.embed_tokens
+        elif hasattr(self.model, 'transformer'):
+            return self.model.transformer.wte
+        else:
+            raise ValueError(f"Unknown model architecture: {type(self.model)}")
+
+    def _init_soft_prompt(self, length: int) -> nn.Parameter:
+        embed_layer = self._get_embedding_layer()
+        embed_weight = embed_layer.weight.data
+        random_indices = torch.randint(0, embed_weight.shape[0], (length,))
+
+        # initialize with small random selection of subset of embeddings to 
+        # match embedding space better
+        init_embeds = embed_weight[random_indices].clone()
+        # Use smaller noise to stay closer to valid embedding distribution
+        init_embeds += torch.randn_like(init_embeds) * 0.001
+        # IMPORTANT: Keep soft prompts in float32 for numerical stability during optimization
+        # even if the model is in float16
+        soft_prompt = nn.Parameter(init_embeds.float().to(self.device))
+        return soft_prompt
+    
+    def clamp_prompts(self, max_norm: float = 100.0):
+        """Clamp soft prompts to prevent embedding drift causing NaN."""
+        with torch.no_grad():
+            # Get reference embedding statistics
+            embed_layer = self._get_embedding_layer()
+            embed_weight = embed_layer.weight.data.float()  # Convert to float32 for comparison
+            
+            # Clamp defense prompt
+            defense_norm = self.defense_prompt.norm(dim=-1, keepdim=True)
+            if (defense_norm > max_norm).any():
+                self.defense_prompt.data = self.defense_prompt.data * (max_norm / defense_norm.clamp(min=1e-8))
+            
+            # Clamp attack prompt  
+            attack_norm = self.attack_prompt.norm(dim=-1, keepdim=True)
+            if (attack_norm > max_norm).any():
+                self.attack_prompt.data = self.attack_prompt.data * (max_norm / attack_norm.clamp(min=1e-8))
+            
+            # Replace any NaN/Inf with random valid embeddings (keep float32)
+            if torch.isnan(self.defense_prompt).any() or torch.isinf(self.defense_prompt).any():
+                print("[WARNING] NaN/Inf in defense_prompt, reinitializing...")
+                random_indices = torch.randint(0, embed_weight.shape[0], (self.defense_length,))
+                self.defense_prompt.data = embed_weight[random_indices].clone().float().to(self.device)
+            
+            if torch.isnan(self.attack_prompt).any() or torch.isinf(self.attack_prompt).any():
+                print("[WARNING] NaN/Inf in attack_prompt, reinitializing...")
+                random_indices = torch.randint(0, embed_weight.shape[0], (self.attack_length,))
+                self.attack_prompt.data = embed_weight[random_indices].clone().float().to(self.device)
+
+    def setup_optimizers(self, lr_defense: float, lr_attack: float, scheduler_type: str = "linear", num_warmup_steps: int = 0, num_training_steps: int = 100):
+        self.defense_optimizer = AdamW([self.defense_prompt], lr=lr_defense)
+        self.attack_optimizer = AdamW([self.attack_prompt], lr=lr_attack)
+        from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
+        # Choose scheduler type
+        if scheduler_type == "linear":
+            scheduler_cls = get_linear_schedule_with_warmup
+        elif scheduler_type == "cosine":
+            scheduler_cls = get_cosine_schedule_with_warmup
+        else:
+            raise ValueError(f"Unknown scheduler_type: {scheduler_type}")
+        self.defense_scheduler = scheduler_cls(self.defense_optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
+        self.attack_scheduler = scheduler_cls(self.attack_optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
+
+    def step_defense_scheduler(self):
+        if hasattr(self, 'defense_scheduler') and self.defense_scheduler is not None:
+            self.defense_scheduler.step()
+
+    def step_attack_scheduler(self):
+        if hasattr(self, 'attack_scheduler') and self.attack_scheduler is not None:
+            self.attack_scheduler.step()
+
+    def get_input_embeds(
+        self,
+        text: str,
+        include_defense: bool = True,
+        include_attack: bool = True
+    ) -> torch.Tensor:
+        tokens = self.tokenizer(text, return_tensors="pt", add_special_tokens=True)
+        input_ids = tokens.input_ids.to(self.device)
+        embed_layer = self._get_embedding_layer()
+        text_embeds = embed_layer(input_ids)
+        
+        # Get the target dtype from the model's embeddings
+        target_dtype = text_embeds.dtype
+        
+        components = []
+        if include_defense:
+            # Cast soft prompt to model dtype for forward pass, but keep fp32 for gradients
+            defense_embeds = self.defense_prompt.unsqueeze(0).to(target_dtype)
+            components.append(defense_embeds)
+        components.append(text_embeds)
+        if include_attack:
+            attack_embeds = self.attack_prompt.unsqueeze(0).to(target_dtype)
+            components.append(attack_embeds)
+        combined_embeds = torch.cat(components, dim=1)
+        return combined_embeds
+
+    def get_prompt_positions(
+        self,
+        text: str,
+        include_defense: bool = True,
+        include_attack: bool = True
+    ) -> dict:
+        tokens = self.tokenizer(text, return_tensors="pt", add_special_tokens=True)
+        text_len = tokens.input_ids.shape[1]
+        positions = {}
+        current_pos = 0
+        if include_defense:
+            positions['defense'] = slice(current_pos, current_pos + self.defense_length)
+            current_pos += self.defense_length
+        positions['text'] = slice(current_pos, current_pos + text_len)
+        current_pos += text_len
+        if include_attack:
+            positions['attack'] = slice(current_pos, current_pos + self.attack_length)
+            current_pos += self.attack_length
+        positions['total_length'] = current_pos
+        return positions
