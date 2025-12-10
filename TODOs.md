@@ -29,5 +29,8 @@ Make a script for running this experimental approach.
 
 Results:
 
-- 15 iters, 100 of each prompt, ASR with= 99%, ASR w/o = 61%
 - 5 iters, 25 of each prompt, ASR with= 98%, ASR w/o = 60%
+- 10 iters, 25 of each prompt, ASR with= 96%, ASR w/o = 56%
+- 15 iters, 25 of each prompt, ASR with= 92%, ASR w/o = 56%
+- 20 iters, 25 of each prompt, ASR with= 92%, ASR w/o = 54%
+- 50 iters, 25 of each prompt, ASR with= 91%, ASR w/o = 58%
