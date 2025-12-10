@@ -31,8 +31,8 @@ DEFAULT_CONFIG = {
     "attack_prompt_length": 20,
     "n_iterations": 2,
     "alpha": 0.5,
-    "lr_defense": 1e-4,  # Reasonable LR with float32 soft prompts
-    "lr_attack": 1e-4,   # Reasonable LR with float32 soft prompts
+    "lr_defense": 1e-5,  # Reasonable LR with float32 soft prompts
+    "lr_attack": 1e-5,   # Reasonable LR with float32 soft prompts
     "batch_size": 4,
     "attack_freq": 1,
     "defense_freq": 1,
@@ -43,7 +43,7 @@ DEFAULT_CONFIG = {
     # Scheduler config
     "scheduler_type": "linear",
     "num_warmup_steps": 0,
-    "num_training_steps": 5,
+    "num_training_steps": 15,
 }
 
 def parse_args():
@@ -197,41 +197,41 @@ def main():
         print(attack_losses)
 
         if (iteration + 1) % config['eval_freq'] == 0:
-            print(f"\n--- Iteration {iteration + 1} ---")
-            if defense_losses:
-                print(f"  Defense - Harmful: {defense_losses.get('harmful', 'N/A'):.4f}, "
-                      f"Benign: {defense_losses.get('benign', 'N/A'):.4f}, "
-                      f"Total: {defense_losses.get('total', 'N/A'):.4f}")
-            if attack_losses:
-                print(f"  Attack: {attack_losses.get('attack', 'N/A'):.4f}")
-            asr_with_attack, _ = evaluate_asr(
-                model=model,
-                soft_prompt_manager=soft_prompt_manager,
-                tokenizer=tokenizer,
-                test_goals=test_harmful_goals,
-                test_targets=test_harmful_targets,
-                max_new_tokens=config['max_new_tokens'],
-                include_attack=True
-            )
-            asr_without_attack, _ = evaluate_asr(
-                model=model,
-                soft_prompt_manager=soft_prompt_manager,
-                tokenizer=tokenizer,
-                test_goals=test_harmful_goals,
-                test_targets=test_harmful_targets,
-                max_new_tokens=config['max_new_tokens'],
-                include_attack=False
-            )
-            print(f"  ASR (with attack): {asr_with_attack:.2%}")
-            print(f"  ASR (without attack): {asr_without_attack:.2%}")
-            training_log['asr_with_attack'].append((iteration + 1, asr_with_attack))
-            training_log['asr_without_attack'].append((iteration + 1, asr_without_attack))
+            # print(f"\n--- Iteration {iteration + 1} ---")
+            # if defense_losses:
+            #     print(f"  Defense - Harmful: {defense_losses.get('harmful', 'N/A'):.4f}, "
+            #           f"Benign: {defense_losses.get('benign', 'N/A'):.4f}, "
+            #           f"Total: {defense_losses.get('total', 'N/A'):.4f}")
+            # if attack_losses:
+            #     print(f"  Attack: {attack_losses.get('attack', 'N/A'):.4f}")
+            # asr_with_attack, _ = evaluate_asr(
+            #     model=model,
+            #     soft_prompt_manager=soft_prompt_manager,
+            #     tokenizer=tokenizer,
+            #     test_goals=test_harmful_goals,
+            #     test_targets=test_harmful_targets,
+            #     max_new_tokens=config['max_new_tokens'],
+            #     include_attack=True
+            # )
+            # asr_without_attack, _ = evaluate_asr(
+            #     model=model,
+            #     soft_prompt_manager=soft_prompt_manager,
+            #     tokenizer=tokenizer,
+            #     test_goals=test_harmful_goals,
+            #     test_targets=test_harmful_targets,
+            #     max_new_tokens=config['max_new_tokens'],
+            #     include_attack=False
+            # )
+            # print(f"  ASR (with attack): {asr_with_attack:.2%}")
+            # print(f"  ASR (without attack): {asr_without_attack:.2%}")
+            # training_log['asr_with_attack'].append((iteration + 1, asr_with_attack))
+            # training_log['asr_without_attack'].append((iteration + 1, asr_without_attack))
             checkpoint = {
                 'iteration': iteration + 1,
                 'defense_prompt': soft_prompt_manager.defense_prompt.detach().cpu(),
                 'attack_prompt': soft_prompt_manager.attack_prompt.detach().cpu(),
-                'asr_with_attack': asr_with_attack,
-                'asr_without_attack': asr_without_attack
+                # 'asr_with_attack': asr_with_attack,
+                # 'asr_without_attack': asr_without_attack
             }
             torch.save(checkpoint, os.path.join(output_dir, f'checkpoint_iter{iteration+1}.pt'))
         if iteration % 10 == 0:
