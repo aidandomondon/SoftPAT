@@ -31,8 +31,8 @@ DEFAULT_CONFIG = {
     "attack_prompt_length": 20,
     "n_iterations": 5,
     "alpha": 0.5,
-    "lr_defense": 0.01,  # Lowered for stability
-    "lr_attack": 0.01,   # Lowered for stability
+    "lr_defense": 0.000001,  # Lowered for stability
+    "lr_attack": 0.000001,   # Lowered for stability
     "batch_size": 4,
     "attack_freq": 1,
     "defense_freq": 1,
@@ -182,7 +182,7 @@ def main():
 
         print(defense_losses)
         print(attack_losses)
-        
+
         if (iteration + 1) % config['eval_freq'] == 0:
             print(f"\n--- Iteration {iteration + 1} ---")
             if defense_losses:
