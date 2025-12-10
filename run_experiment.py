@@ -9,7 +9,7 @@ def run_quick_experiment():
     
     # Initialize optimizer
     optimizer = SoftPromptOptimizer(
-        model_name="microsoft/DialoGPT-medium",
+        model_name="lmsys/vicuna-7b-v1.3",
         prompt_length=10,
         device="cuda"
     )
