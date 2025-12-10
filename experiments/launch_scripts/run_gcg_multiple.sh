@@ -22,8 +22,10 @@ else
     echo "Folder '../results/1-28' already exists."
 fi
 
+log_name="/path/to/defense_log.json"
+
 #TODO: Decrease n_steps and test_steps
-CUDA_VISIBLE_DEVICES=${device} python -u ../main_soft.py \
+CUDA_VISIBLE_DEVICES=${device} python -u ../main.py \
     --config="../configs/transfer_${model}_multi.py" \
     --config.attack=soft_prompt \
     --config.train_data="../../data/advbench/harmful_behaviors.csv" \
