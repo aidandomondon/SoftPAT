@@ -40,6 +40,11 @@ DEFAULT_CONFIG = {
     "max_new_tokens": 64,
     "output_dir": "results/soft_pat",
     "seed": 42,
+    "seed": 42,
+    # Scheduler config
+    "scheduler_type": "linear",
+    "num_warmup_steps": 3,
+    "num_training_steps": 5,
 }
 
 def parse_args():
@@ -66,6 +71,12 @@ def parse_args():
     parser.add_argument("--max_new_tokens", type=int, default=DEFAULT_CONFIG['max_new_tokens'])
     parser.add_argument("--output_dir", type=str, default=DEFAULT_CONFIG['output_dir'])
     parser.add_argument("--seed", type=int, default=DEFAULT_CONFIG['seed'])
+    parser.add_argument("--scheduler_type", type=str, default=DEFAULT_CONFIG['scheduler_type'],
+                        help="Type of LR scheduler: linear or cosine")
+    parser.add_argument("--num_warmup_steps", type=int, default=DEFAULT_CONFIG['num_warmup_steps'],
+                        help="Number of warmup steps for LR scheduler")
+    parser.add_argument("--num_training_steps", type=int, default=DEFAULT_CONFIG['num_training_steps'],
+                        help="Total number of training steps for LR scheduler")
     return parser.parse_args()
 
 def main():
@@ -123,7 +134,10 @@ def main():
     )
     soft_prompt_manager.setup_optimizers(
         lr_defense=config['lr_defense'],
-        lr_attack=config['lr_attack']
+        lr_attack=config['lr_attack'],
+        scheduler_type=config.get('scheduler_type', 'linear'),
+        num_warmup_steps=config.get('num_warmup_steps', 0),
+        num_training_steps=config.get('num_training_steps', config['n_iterations'])
     )
     print(f"  Defense prompt shape: {soft_prompt_manager.defense_prompt.shape}")
     print(f"  Attack prompt shape: {soft_prompt_manager.attack_prompt.shape}")

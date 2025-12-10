@@ -184,6 +184,9 @@ def defense_step(
     total_loss.backward()
     torch.nn.utils.clip_grad_norm_([soft_prompt_manager.defense_prompt], max_norm=1.0)
     soft_prompt_manager.defense_optimizer.step()
+    # Step the defense scheduler if present
+    if hasattr(soft_prompt_manager, 'step_defense_scheduler'):
+        soft_prompt_manager.step_defense_scheduler()
     avg_losses = {k: np.mean(v) for k, v in all_losses.items()}
     return avg_losses
 
@@ -218,5 +221,8 @@ def attack_step(
     total_loss.backward()
     torch.nn.utils.clip_grad_norm_([soft_prompt_manager.attack_prompt], max_norm=1.0)
     soft_prompt_manager.attack_optimizer.step()
+    # Step the attack scheduler if present
+    if hasattr(soft_prompt_manager, 'step_attack_scheduler'):
+        soft_prompt_manager.step_attack_scheduler()
     avg_losses = {k: np.mean(v) for k, v in all_losses.items()}
     return avg_losses

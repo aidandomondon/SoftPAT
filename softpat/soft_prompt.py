@@ -59,9 +59,27 @@ class SoftPromptManager:
         soft_prompt = nn.Parameter(init_embeds.to(self.device))
         return soft_prompt
 
-    def setup_optimizers(self, lr_defense: float, lr_attack: float):
+    def setup_optimizers(self, lr_defense: float, lr_attack: float, scheduler_type: str = "linear", num_warmup_steps: int = 0, num_training_steps: int = 100):
         self.defense_optimizer = AdamW([self.defense_prompt], lr=lr_defense)
         self.attack_optimizer = AdamW([self.attack_prompt], lr=lr_attack)
+        from transformers import get_linear_schedule_with_warmup, get_cosine_schedule_with_warmup
+        # Choose scheduler type
+        if scheduler_type == "linear":
+            scheduler_cls = get_linear_schedule_with_warmup
+        elif scheduler_type == "cosine":
+            scheduler_cls = get_cosine_schedule_with_warmup
+        else:
+            raise ValueError(f"Unknown scheduler_type: {scheduler_type}")
+        self.defense_scheduler = scheduler_cls(self.defense_optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
+        self.attack_scheduler = scheduler_cls(self.attack_optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
+
+    def step_defense_scheduler(self):
+        if hasattr(self, 'defense_scheduler') and self.defense_scheduler is not None:
+            self.defense_scheduler.step()
+
+    def step_attack_scheduler(self):
+        if hasattr(self, 'attack_scheduler') and self.attack_scheduler is not None:
+            self.attack_scheduler.step()
 
     def get_input_embeds(
         self,
